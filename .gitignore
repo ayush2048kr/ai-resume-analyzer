@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+**/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js & Build Outputs
+.next/
+/.next/
+out/
+/out/
+build/
+/build/
+dist/
+/dist/
+
+# Environment files & Secrets (CRITICAL)
+.env
+.env*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+backend/.env*
+*.env
+
+# Allow public example templates
+!.env.example
+!backend/.env.example
+
+# Testing & Coverage
+coverage/
+/coverage/
+
+# Debug Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# System & OS Files
+.DS_Store
+*.pem
+Thumbs.db
+
+# TypeScript / IDE
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+.vscode/
+.idea/
