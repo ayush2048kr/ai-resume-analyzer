@@ -1,0 +1,35 @@
+name: Monorepo CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  ci-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify Frontend (Next.js)
+        run: |
+          npm install
+          npm run build
+
+      - name: Verify Backend (Express)
+        working-directory: ./backend
+        run: npm install
+
+      - name: Trigger Render Backend Deployment
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          deploy_hook: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: curl "$deploy_hook"
