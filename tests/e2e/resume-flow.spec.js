@@ -23,16 +23,24 @@ const MINIMAL_PDF = Buffer.from(
   'trailer<</Size 4/Root 1 0 R>>\nstartxref\n206\n%%EOF'
 );
 
-// Write the test PDF to a temp location before tests
-const TEST_PDF_PATH = path.join(__dirname, 'test-resume.pdf');
+const os = require('os');
+
+// Each parallel worker gets its OWN temp file to avoid Windows EBUSY locking
+// when multiple workers run afterAll concurrently.
+const TEST_PDF_PATH = path.join(os.tmpdir(), `playwright-test-resume-${process.pid}.pdf`);
 
 test.beforeAll(async () => {
   fs.writeFileSync(TEST_PDF_PATH, MINIMAL_PDF);
 });
 
 test.afterAll(async () => {
-  if (fs.existsSync(TEST_PDF_PATH)) {
-    fs.unlinkSync(TEST_PDF_PATH);
+  // Non-throwing cleanup — Windows can lock the file briefly
+  try {
+    if (fs.existsSync(TEST_PDF_PATH)) {
+      fs.unlinkSync(TEST_PDF_PATH);
+    }
+  } catch (_) {
+    // Ignore EBUSY on Windows — OS will clean up temp files anyway
   }
 });
 
