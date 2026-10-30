@@ -1,0 +1,24 @@
+# Render.com deployment configuration
+# This file tells Render how to deploy the backend service.
+# Docs: https://render.com/docs/render-yaml-spec
+
+services:
+  - type: web
+    name: ai-resume-analyzer-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false  # Set this manually in Render dashboard → Environment
+      - key: SUPABASE_URL
+        sync: false  # Optional — set if using Supabase
+      - key: SUPABASE_ANON_KEY
+        sync: false  # Optional — set if using Supabase
+    autoDeploy: true

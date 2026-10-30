@@ -1,4 +1,4 @@
-import ResumeUpload from '../components/ResumeUpload';
+import ResumeUploader from '../components/ResumeUploader';
 
 export default function Home() {
   return (
@@ -6,7 +6,7 @@ export default function Home() {
       <h1 className="text-4xl font-bold text-gray-900 mb-2">AI Resume Analyzer</h1>
       <p className="text-gray-500 mb-8">Upload your resume to extract insights.</p>
       
-      <ResumeUpload />
+      <ResumeUploader />
     </main>
   );
 }
