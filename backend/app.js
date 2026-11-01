@@ -9,7 +9,7 @@ const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
 const uploadRoutes = require('./routes/upload');
-const { cleanJsonResponse, normalizeAnalysis, validateUploadedFile, isValidApiKey } = require('./utils/helpers');
+const { cleanJsonResponse, normalizeAnalysis, validateUploadedFile, isValidApiKey, extractPdfText } = require('./utils/helpers');
 
 const app = express();
 
@@ -69,7 +69,18 @@ const responseSchema = {
  * Accepts: multipart/form-data with 'file' (PDF) and optional 'jobDescription'.
  * Returns: { score, missing_skills, improvements }
  */
-app.post('/api/analyze', upload.single('file'), async (req, res) => {
+const analyzeUpload = upload.fields([{ name: 'file', maxCount: 1 }, { name: 'resume', maxCount: 1 }]);
+const analyzeUploadMiddleware = (req, res, next) => {
+  analyzeUpload(req, res, (err) => {
+    if (err) return next(err);
+    if (!req.file && req.files) {
+      req.file = (req.files.file && req.files.file[0]) || (req.files.resume && req.files.resume[0]);
+    }
+    next();
+  });
+};
+
+app.post('/api/analyze', analyzeUploadMiddleware, async (req, res) => {
   try {
     // 1. Validate file
     const fileCheck = validateUploadedFile(req.file);
@@ -82,20 +93,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
     // 2. Extract text from uploaded PDF
     let resumeText;
     try {
-      const parseFn = typeof pdfParse === 'function'
-        ? pdfParse
-        : (pdfParse.default || pdfParse.PDFParse
-            ? async (buffer) => {
-                const Target = pdfParse.PDFParse || pdfParse.default;
-                if (Target.prototype && Target.prototype.getText) {
-                  const parser = new Target({ data: buffer });
-                  return await parser.getText();
-                }
-                return await Target(buffer);
-              }
-            : pdfParse);
-      const pdfData = await parseFn(req.file.buffer);
-      resumeText = pdfData.text;
+      resumeText = await extractPdfText(req.file.buffer);
     } catch (pdfError) {
       console.error('PDF parse error:', pdfError);
       return res.status(400).json({ error: 'Could not parse the PDF. Ensure the file contains selectable text.' });
@@ -113,17 +111,9 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
       });
     }
 
-    // 4. Initialize Gemini model with JSON response enforcement
+    // 4. Initialize Gemini model with candidate fallback chain
+    const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      systemInstruction: SYSTEM_PROMPT,
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: responseSchema,
-        temperature: 0.2,
-      },
-    });
 
     const userPrompt = `
 Analyze this resume text against the target job description:
@@ -135,11 +125,35 @@ ${jobDescription}
 ${resumeText}
 `;
 
-    // 5. Send request to Gemini
-    const result = await model.generateContent(userPrompt);
-    const responseText = result.response.text();
+    let responseText = null;
+    let lastError = null;
 
-    // 6. Safely parse JSON output
+    for (const modelName of candidateModels) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          systemInstruction: SYSTEM_PROMPT,
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: responseSchema,
+            temperature: 0.2,
+          },
+        });
+        const result = await model.generateContent(userPrompt);
+        responseText = result.response.text();
+        if (responseText) break;
+      } catch (aiErr) {
+        console.warn(`Model ${modelName} analysis attempt failed:`, aiErr.message);
+        lastError = aiErr;
+      }
+    }
+
+    if (!responseText) {
+      console.error('All Gemini candidate models failed:', lastError);
+      return res.status(500).json({ error: lastError?.message || 'Failed to generate resume analysis from AI.' });
+    }
+
+    // 5. Safely parse JSON output
     let analysis;
     try {
       const cleaned = cleanJsonResponse(responseText);

@@ -37,6 +37,8 @@ backend/.env*
 # Testing & Coverage
 coverage/
 /coverage/
+playwright-report/
+test-results/
 
 # Debug Logs
 npm-debug.log*

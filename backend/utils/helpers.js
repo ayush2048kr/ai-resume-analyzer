@@ -62,9 +62,43 @@ function isValidApiKey(apiKey) {
   return true;
 }
 
+/**
+ * Safely extracts plain text from a PDF Buffer using pdf-parse across library versions.
+ * @param {Buffer} buffer
+ * @param {any} [pdfLib]
+ * @returns {Promise<string>}
+ */
+async function extractPdfText(buffer, pdfLib = require('pdf-parse')) {
+  if (!buffer || !Buffer.isBuffer(buffer)) {
+    throw new Error('Invalid PDF buffer provided.');
+  }
+
+  if (typeof pdfLib === 'function') {
+    const data = await pdfLib(buffer);
+    return data.text || '';
+  }
+
+  const Target = pdfLib.PDFParse || pdfLib.default;
+  if (Target) {
+    if (Target.prototype && typeof Target.prototype.getText === 'function') {
+      const parser = new Target({ data: buffer });
+      const result = await parser.getText();
+      return typeof result === 'string' ? result : (result.text || '');
+    }
+    if (typeof Target === 'function') {
+      const data = await Target(buffer);
+      return data.text || '';
+    }
+  }
+
+  throw new Error('Unsupported pdf-parse interface');
+}
+
 module.exports = {
   cleanJsonResponse,
   normalizeAnalysis,
   validateUploadedFile,
   isValidApiKey,
+  extractPdfText,
 };
+

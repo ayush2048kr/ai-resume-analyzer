@@ -144,7 +144,7 @@ describe('POST /api/analyze', () => {
 
   test('handles Gemini API errors gracefully', async () => {
     const { __mockGenerateContent } = require('@google/generative-ai');
-    __mockGenerateContent.mockRejectedValueOnce(new Error('Gemini rate limited'));
+    __mockGenerateContent.mockRejectedValue(new Error('Gemini rate limited'));
 
     const res = await request(app)
       .post('/api/analyze')
@@ -152,6 +152,17 @@ describe('POST /api/analyze', () => {
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBeDefined();
+
+    // Restore default mock for subsequent tests
+    __mockGenerateContent.mockResolvedValue({
+      response: {
+        text: () => JSON.stringify({
+          score: 78,
+          missing_skills: ['Docker', 'Kubernetes'],
+          improvements: ['Add metrics to quantify impact', 'Include CI/CD experience'],
+        }),
+      },
+    });
   });
 
   test('handles malformed Gemini JSON response', async () => {

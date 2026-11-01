@@ -73,15 +73,26 @@ function makeRequest(url, options = {}) {
   });
 }
 
+const VALID_PDF_STRING =
+  '%PDF-1.4\n' +
+  '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n' +
+  '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n' +
+  '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n' +
+  '4 0 obj\n<< /Length 72 >>\nstream\n' +
+  'BT\n/F1 12 Tf\n72 712 Td\n(John Doe Software Engineer JavaScript React Node.js AWS Docker) Tj\nET\n' +
+  'endstream\nendobj\n' +
+  '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n' +
+  'xref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000244 00000 n \n0000000366 00000 n \n' +
+  'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n442\n%%EOF';
+
 function createMultipartBody(boundary) {
-  const fakePdf = '%PDF-1.4 fake resume content with some text for testing John Doe Software Engineer JavaScript React Node.js';
   const jobDesc = 'Senior Full Stack Developer with React, Node.js, and Docker experience';
 
   let body = '';
   body += `--${boundary}\r\n`;
   body += `Content-Disposition: form-data; name="file"; filename="resume.pdf"\r\n`;
   body += `Content-Type: application/pdf\r\n\r\n`;
-  body += `${fakePdf}\r\n`;
+  body += `${VALID_PDF_STRING}\r\n`;
   body += `--${boundary}\r\n`;
   body += `Content-Disposition: form-data; name="jobDescription"\r\n\r\n`;
   body += `${jobDesc}\r\n`;

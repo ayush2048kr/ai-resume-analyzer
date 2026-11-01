@@ -13,6 +13,7 @@ const {
   normalizeAnalysis,
   validateUploadedFile,
   isValidApiKey,
+  extractPdfText,
 } = require('../../utils/helpers');
 
 // ─────────────────────────────────────────────
@@ -162,3 +163,43 @@ describe('isValidApiKey', () => {
     expect(isValidApiKey(12345)).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────
+// extractPdfText
+// ─────────────────────────────────────────────
+describe('extractPdfText', () => {
+  test('rejects if buffer is null or undefined', async () => {
+    await expect(extractPdfText(null)).rejects.toThrow('Invalid PDF buffer');
+    await expect(extractPdfText(undefined)).rejects.toThrow('Invalid PDF buffer');
+  });
+
+  test('extracts text when pdfLib is a callable function', async () => {
+    const mockPdfFn = jest.fn().mockResolvedValue({ text: 'Extracted plain text' });
+    const buffer = Buffer.from('fake pdf data');
+    const result = await extractPdfText(buffer, mockPdfFn);
+    expect(result).toBe('Extracted plain text');
+    expect(mockPdfFn).toHaveBeenCalledWith(buffer);
+  });
+
+  test('extracts text when pdfLib has class-based PDFParse constructor', async () => {
+    class MockPDFParse {
+      constructor({ data }) {
+        this.data = data;
+      }
+      async getText() {
+        return { text: 'Class-based extracted text', pages: 1 };
+      }
+    }
+    const mockLib = { PDFParse: MockPDFParse };
+    const buffer = Buffer.from('fake pdf data');
+    const result = await extractPdfText(buffer, mockLib);
+    expect(result).toBe('Class-based extracted text');
+  });
+
+  test('throws error if pdfLib interface is unsupported', async () => {
+    const mockLib = { unsupport: true };
+    const buffer = Buffer.from('fake pdf data');
+    await expect(extractPdfText(buffer, mockLib)).rejects.toThrow('Unsupported pdf-parse interface');
+  });
+});
+
