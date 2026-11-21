@@ -4,6 +4,7 @@ const pdfParse = require('pdf-parse');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const supabase = require('../config/supabase');
 const { extractPdfText } = require('../utils/helpers');
+const { evaluateResumeHeuristically } = require('../utils/atsEngine');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -101,12 +102,16 @@ ${resumeText}
 
     // Extract score if available from markdown or default
     const scoreMatch = aiFeedback.match(/(\d{1,3})%/);
-    const score = scoreMatch ? Math.min(100, Math.max(0, parseInt(scoreMatch[1], 10))) : 75;
+    const parsedScore = scoreMatch ? Math.min(100, Math.max(0, parseInt(scoreMatch[1], 10))) : null;
+
+    // Use ATS engine to extract real missing skills and recommendations
+    const heuristic = evaluateResumeHeuristically(resumeText, jobDescription);
+    const score = parsedScore !== null ? parsedScore : heuristic.score;
 
     const analysis = {
       score,
-      missing_skills: ["Review suggested keywords in AI feedback"],
-      improvements: ["See detailed recruiter breakdown in AI feedback"]
+      missing_skills: heuristic.missing_skills.length > 0 ? heuristic.missing_skills : ["Review suggested keywords in AI feedback"],
+      improvements: heuristic.improvements.length > 0 ? heuristic.improvements : ["See detailed recruiter breakdown in AI feedback"]
     };
 
     res.status(200).json({

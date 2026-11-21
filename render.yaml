@@ -6,6 +6,7 @@ services:
   - type: web
     name: ai-resume-analyzer-backend
     runtime: node
+    plan: free
     rootDir: backend
     buildCommand: npm install
     startCommand: node server.js
@@ -15,6 +16,8 @@ services:
         value: 8000
       - key: NODE_ENV
         value: production
+      - key: ENABLE_ATS_FALLBACK
+        value: "true"
       - key: GEMINI_API_KEY
         sync: false  # Set this manually in Render dashboard → Environment
       - key: SUPABASE_URL

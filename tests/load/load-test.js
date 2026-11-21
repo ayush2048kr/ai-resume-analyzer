@@ -130,6 +130,9 @@ function printResults(label, results) {
     Object.entries(errorCounts).forEach(([err, count]) => {
       console.log(`    • ${err}: ${count}`);
     });
+    if (failed[0] && failed[0].data) {
+      console.log(`  Sample Body: ${failed[0].data.substring(0, 150)}`);
+    }
   }
   console.log('');
 }

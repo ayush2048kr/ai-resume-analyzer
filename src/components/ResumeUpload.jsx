@@ -7,6 +7,7 @@ export default function ResumeUpload() {
   const [file, setFile] = useState(null);
   const [jobDescription, setJobDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Analyzing Resume...');
   const [analysisResult, setAnalysisResult] = useState(null);
   const [extractedText, setExtractedText] = useState('');
   const [error, setError] = useState('');
@@ -33,7 +34,13 @@ export default function ResumeUpload() {
     }
 
     setIsLoading(true);
+    setLoadingMessage('Analyzing Resume...');
     setError('');
+
+    // On Render free tier, server spins down after inactivity; inform user if it takes > 5s
+    const wakeTimer = setTimeout(() => {
+      setLoadingMessage('Waking up free backend server (may take 30-45s on cold start)...');
+    }, 5000);
 
     // Construct FormData with both the file and job description string
     const formData = new FormData();
@@ -62,9 +69,11 @@ export default function ResumeUpload() {
       }
     } catch (err) {
       console.error('Network error:', err);
-      setError('Failed to connect to the backend server. Make sure your server is running on http://localhost:8000.');
+      setError('Failed to connect to the backend server. If using Render free tier, wait 30s for the server to wake up.');
     } finally {
+      clearTimeout(wakeTimer);
       setIsLoading(false);
+      setLoadingMessage('Analyzing Resume...');
     }
   };
 
@@ -178,7 +187,7 @@ export default function ResumeUpload() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
-                Analyzing Resume...
+                {loadingMessage}
               </>
             ) : (
               <>

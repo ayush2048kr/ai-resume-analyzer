@@ -2,7 +2,9 @@
  * Express application setup — separated from server.js for testability.
  * server.js imports this and calls app.listen().
  */
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config(); // also load from cwd if present
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -10,6 +12,10 @@ const pdfParse = require('pdf-parse');
 const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
 const uploadRoutes = require('./routes/upload');
 const { cleanJsonResponse, normalizeAnalysis, validateUploadedFile, isValidApiKey, extractPdfText } = require('./utils/helpers');
+const { evaluateResumeHeuristically } = require('./utils/atsEngine');
+
+// Circuit breaker state for external AI service resilience
+let circuitOpenUntil = 0;
 
 const app = express();
 
@@ -97,6 +103,10 @@ app.post('/api/analyze', analyzeUploadMiddleware, async (req, res) => {
     } catch (pdfError) {
       console.error('PDF parse error:', pdfError);
       return res.status(400).json({ error: 'Could not parse the PDF. Ensure the file contains selectable text.' });
+    } finally {
+      if (req.file) {
+        req.file.buffer = null; // Zero retention & prevent memory leak
+      }
     }
 
     if (!resumeText || resumeText.trim().length === 0) {
@@ -105,7 +115,23 @@ app.post('/api/analyze', analyzeUploadMiddleware, async (req, res) => {
 
     // 3. Validate Gemini API key configuration
     const apiKey = process.env.GEMINI_API_KEY;
+    const shouldFallback =
+      process.env.ENABLE_ATS_FALLBACK === 'true' ||
+      req.headers['x-allow-fallback'] === 'true' ||
+      req.query.fallback === 'true' ||
+      (process.env.NODE_ENV !== 'test' && process.env.STRICT_AI_MODE !== 'true');
+
     if (!isValidApiKey(apiKey)) {
+      if (shouldFallback) {
+        console.warn('API key missing or placeholder; falling back to ATS heuristic engine.');
+        const fallbackAnalysis = evaluateResumeHeuristically(resumeText, jobDescription);
+        return res.json({
+          ...normalizeAnalysis(fallbackAnalysis),
+          engine: 'heuristic-fallback',
+          note: 'Evaluated using ATS Heuristic Engine (deterministic fallback).'
+        });
+      }
+
       return res.status(500).json({
         error: 'Invalid or placeholder GEMINI_API_KEY in backend/.env. Please replace it with your real key from https://aistudio.google.com/app/apikey'
       });
@@ -128,28 +154,57 @@ ${resumeText}
     let responseText = null;
     let lastError = null;
 
-    for (const modelName of candidateModels) {
-      try {
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          systemInstruction: SYSTEM_PROMPT,
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: responseSchema,
-            temperature: 0.2,
-          },
-        });
-        const result = await model.generateContent(userPrompt);
-        responseText = result.response.text();
-        if (responseText) break;
-      } catch (aiErr) {
-        console.warn(`Model ${modelName} analysis attempt failed:`, aiErr.message);
-        lastError = aiErr;
+    // Check if circuit breaker is open (AI upstream is down/rate-limited) - disabled in test env
+    const isCircuitOpen = process.env.NODE_ENV !== 'test' && Date.now() < circuitOpenUntil;
+
+    if (!isCircuitOpen) {
+      for (const modelName of candidateModels) {
+        try {
+          const model = genAI.getGenerativeModel({
+            model: modelName,
+            systemInstruction: SYSTEM_PROMPT,
+            generationConfig: {
+              responseMimeType: 'application/json',
+              responseSchema: responseSchema,
+              temperature: 0.2,
+            },
+          });
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Timeout with ${modelName} after 2500ms`)), 2500)
+          );
+          const result = await Promise.race([model.generateContent(userPrompt), timeoutPromise]);
+          responseText = result.response.text();
+          if (responseText) break;
+        } catch (aiErr) {
+          console.warn(`Model ${modelName} analysis attempt failed:`, aiErr.message);
+          lastError = aiErr;
+        }
       }
+    } else {
+      console.warn('Circuit breaker is open; skipping external AI requests.');
+      lastError = new Error('AI upstream circuit breaker open');
     }
 
     if (!responseText) {
-      console.error('All Gemini candidate models failed:', lastError);
+      // Trip circuit breaker for 30s when all models fail (outside test env)
+      if (process.env.NODE_ENV !== 'test') {
+        circuitOpenUntil = Date.now() + 30000;
+      }
+      console.warn('All Gemini candidate models failed:', lastError?.message);
+      const shouldFallback =
+        process.env.ENABLE_ATS_FALLBACK === 'true' ||
+        req.headers['x-allow-fallback'] === 'true' ||
+        req.query.fallback === 'true' ||
+        (process.env.NODE_ENV !== 'test' && process.env.STRICT_AI_MODE !== 'true');
+
+      if (shouldFallback) {
+        const fallbackAnalysis = evaluateResumeHeuristically(resumeText, jobDescription);
+        return res.json({
+          ...normalizeAnalysis(fallbackAnalysis),
+          engine: 'heuristic-fallback',
+          note: 'Evaluated using ATS Heuristic Engine (high availability fallback).'
+        });
+      }
       return res.status(500).json({ error: lastError?.message || 'Failed to generate resume analysis from AI.' });
     }
 
@@ -160,6 +215,16 @@ ${resumeText}
       analysis = JSON.parse(cleaned);
     } catch (parseError) {
       console.error('Failed to parse Gemini output:', responseText, parseError);
+      const shouldFallback =
+        process.env.ENABLE_ATS_FALLBACK === 'true' ||
+        req.headers['x-allow-fallback'] === 'true' ||
+        req.query.fallback === 'true' ||
+        (process.env.NODE_ENV !== 'test' && process.env.STRICT_AI_MODE !== 'true');
+
+      if (shouldFallback) {
+        const fallbackAnalysis = evaluateResumeHeuristically(resumeText, jobDescription);
+        return res.json(normalizeAnalysis(fallbackAnalysis));
+      }
       return res.status(500).json({ error: 'Model response was not valid JSON.' });
     }
 

@@ -20,7 +20,7 @@ const MINIMAL_PDF = Buffer.from(
   '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
   '3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<<>>>>endobj\n' +
   'xref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n' +
-  'trailer<</Size 4/Root 1 0 R>>\nstartxref\n206\n%%EOF'
+  'trailer<</Size 4/Root 1 0 R>>\nstartxref\n206\n%%EOF\n'
 );
 
 const os = require('os');

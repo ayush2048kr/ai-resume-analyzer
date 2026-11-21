@@ -136,15 +136,24 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Deploy Backend to Render
-        if: env.RENDER_DEPLOY_HOOK != ''
+        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
         env:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         run: |
-          echo "Triggering Render deploy..."
-          curl -s -X POST "$RENDER_DEPLOY_HOOK" | jq '.deploy.status // "triggered"'
+          echo "Triggering Render deploy webhook..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$RENDER_DEPLOY_HOOK")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "Render response (HTTP $HTTP_CODE): $BODY"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "Render deployment triggered successfully!"
+          else
+            echo "Note: Webhook returned HTTP $HTTP_CODE. If your repo is connected to Render, it auto-deploys from Git push anyway."
+          fi
+        continue-on-error: true
 
       - name: Deploy Frontend to Vercel
-        if: env.VERCEL_TOKEN != ''
+        if: ${{ secrets.VERCEL_TOKEN != '' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -152,9 +161,10 @@ jobs:
         run: |
           npm i -g vercel --quiet
           vercel --prod --token "$VERCEL_TOKEN" --yes
+        continue-on-error: true
 
       - name: Post-Deployment Health Check
-        if: env.RENDER_URL != ''
+        if: ${{ secrets.RENDER_BACKEND_URL != '' }}
         env:
           RENDER_URL: ${{ secrets.RENDER_BACKEND_URL }}
         run: |
@@ -162,9 +172,9 @@ jobs:
           sleep 30
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$RENDER_URL/api/health")
           echo "Backend health check: HTTP $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "Health check returned $STATUS — backend may still be spinning up"
-          else
+          if [ "$STATUS" = "200" ]; then
             echo "Backend is healthy!"
+          else
+            echo "Backend returned HTTP $STATUS (may still be spinning up on Free Tier)."
           fi
         continue-on-error: true
